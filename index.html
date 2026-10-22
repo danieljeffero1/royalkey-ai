@@ -4,11 +4,11 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>RoyalKey AI - Test Key Manager</title>
+<title>RoyalKey AI - Key Manager</title>
 <style>
 *{box-sizing:border-box}
 body{margin:0;background:#0b1224;color:#f4f7ff;font-family:Arial,sans-serif;padding:20px}
-main{max-width:850px;margin:auto}
+main{max-width:900px;margin:auto}
 header{padding:20px 0}
 h1{font-size:34px;margin-bottom:5px}
 p{color:#c2cee5;line-height:1.5}
@@ -19,10 +19,16 @@ button{padding:11px 14px;margin:8px 6px 0 0;border:0;border-radius:8px;backgroun
 button.secondary{background:#2b3d5d;color:white}
 button.danger{background:#713541;color:white}
 button:disabled{opacity:.4;cursor:not-allowed}
-.key{margin-top:14px;padding:14px;border:1px dashed #718bb4;border-radius:8px;overflow-wrap:anywhere;font-family:monospace}
+.key{margin-top:12px;padding:14px;border:1px dashed #718bb4;border-radius:8px;overflow-wrap:anywhere;font-family:monospace}
 .saved{border-top:1px solid #35496c;padding:14px 0;overflow-wrap:anywhere}
 .small{font-size:13px}
 .notice{border-left:4px solid #ffbd70;padding:12px;background:#30271e;color:#ffe0b5}
+.status{min-height:24px}
+.toolbar{display:flex;gap:8px;flex-wrap:wrap}
+.toolbar button{margin-right:0}
+.saved-title{font-size:18px}
+.count{color:#c2cee5;font-size:14px}
+@media(max-width:520px){body{padding:12px}.panel{padding:15px}h1{font-size:28px}}
 </style>
 </head>
 <body>
@@ -33,11 +39,14 @@ button:disabled{opacity:.4;cursor:not-allowed}
 </header>
 
 <div class="notice">
-<strong>Important:</strong> These are demo test strings only. They are not real API keys and cannot connect to AI services. Never put real secret API keys in a public website.
+<strong>Important:</strong> These are demo test strings only.
+They are not real API keys and cannot connect to AI services.
+Never put real secret API keys in a public website.
 </div>
 
 <section class="panel">
 <h2>Generate a test key</h2>
+
 <label for="keyLabel">Key name (optional)</label>
 <input id="keyLabel" maxlength="60" placeholder="Example: My website test">
 
@@ -48,28 +57,44 @@ button:disabled{opacity:.4;cursor:not-allowed}
 <option value="48">48 random bytes</option>
 </select>
 
+<div class="toolbar">
 <button id="generate">Generate test key</button>
 <button id="copy" class="secondary" disabled>Copy key</button>
 <button id="save" class="secondary" disabled>Save key</button>
+</div>
 
 <div id="currentKey" class="key">Your generated key will appear here.</div>
-<p id="status" role="status"></p>
+<p id="status" class="status" role="status" aria-live="polite"></p>
 </section>
 
 <section class="panel">
 <h2>My saved test keys</h2>
-<p class="small">Saved only in this browser on this device.</p>
+<p class="small">Saved only in this browser on this device. These are demo keys, not account credentials.</p>
+
+<label for="searchKeys">Search saved keys</label>
+<input id="searchKeys" type="search" placeholder="Search by name or key">
+
+<p id="keyCount" class="count"></p>
+
+<div class="toolbar">
 <button id="export" class="secondary">Export JSON</button>
 <button id="clear" class="danger">Delete all saved keys</button>
+</div>
+
 <div id="savedKeys"></div>
 </section>
 
-<p class="small">RoyalKey AI — No account or paid service required.</p>
+<section class="panel">
+<h2>AI connection — future upgrade</h2>
+<p>This website currently manages demo test keys only. A real AI connection requires an AI provider and a secure server-side connection. Secret provider keys must never be placed in this public page.</p>
+<p class="small">RoyalKey AI — Demo key management works without an account or paid service.</p>
+</section>
 </main>
 
 <script>
 (function(){
 "use strict";
+
 const STORAGE="royalkey_test_keys_v1";
 let currentKey="";
 const el=id=>document.getElementById(id);
@@ -77,7 +102,11 @@ const el=id=>document.getElementById(id);
 function getKeys(){
  try{
   const value=JSON.parse(localStorage.getItem(STORAGE)||"[]");
-  return Array.isArray(value)?value:[];
+  return Array.isArray(value)?value.filter(item=>
+   item && typeof item==="object" &&
+   typeof item.key==="string" &&
+   typeof item.id==="string"
+  ): [];
  }catch(error){return [];}
 }
 
@@ -86,12 +115,14 @@ function putKeys(keys){
 }
 
 function generateKey(bytes){
- if(!window.crypto||!window.crypto.getRandomValues){
+ if(!window.crypto || !window.crypto.getRandomValues){
   throw new Error("Secure random generation is unavailable in this browser.");
  }
  const data=new Uint8Array(bytes);
  window.crypto.getRandomValues(data);
- return "rk_test_"+Array.from(data,b=>b.toString(16).padStart(2,"0")).join("");
+ return "rk_test_"+Array.from(data,b=>
+  b.toString(16).padStart(2,"0")
+ ).join("");
 }
 
 async function copyText(value){
@@ -103,45 +134,102 @@ async function copyText(value){
   area.value=value;
   document.body.appendChild(area);
   area.select();
-  const copied=document.execCommand("copy");
+  let copied=false;
+  try{copied=document.execCommand("copy");}catch(e){}
   area.remove();
-  el("status").textContent=copied?"Copied to clipboard.":"Copy blocked. Select the key and copy it manually.";
+  el("status").textContent=copied
+   ?"Copied to clipboard."
+   :"Copy blocked. Select the key and copy it manually.";
  }
 }
 
 function render(){
  const list=el("savedKeys");
  list.replaceChildren();
- const keys=getKeys();
- if(!keys.length){
-  list.textContent="No saved test keys yet.";
+
+ const query=el("searchKeys").value.trim().toLowerCase();
+ const all=getKeys();
+ const filtered=all.filter(item=>
+  (item.label||"Test key").toLowerCase().includes(query) ||
+  item.key.toLowerCase().includes(query)
+ );
+
+ el("keyCount").textContent=
+  filtered.length+" shown / "+all.length+" saved";
+
+ if(!filtered.length){
+  list.textContent=all.length
+   ?"No keys match your search."
+   :"No saved test keys yet.";
   return;
  }
- keys.slice().reverse().forEach(item=>{
+
+ filtered.slice().reverse().forEach(item=>{
   const row=document.createElement("div");
   row.className="saved";
-  const title=document.createElement("strong");
+
+  const title=document.createElement("div");
+  title.className="saved-title";
   title.textContent=item.label||"Test key";
+
   const date=document.createElement("p");
   date.className="small";
-  date.textContent=new Date(item.created).toLocaleString();
+  const parsedDate=new Date(item.created);
+  date.textContent=Number.isNaN(parsedDate.getTime())
+   ?"Date unavailable"
+   :parsedDate.toLocaleString();
+
   const value=document.createElement("div");
   value.className="key";
   value.textContent=item.key;
+
   const copy=document.createElement("button");
   copy.textContent="Copy";
   copy.onclick=()=>copyText(item.key);
+
+  const rename=document.createElement("button");
+  rename.className="secondary";
+  rename.textContent="Rename";
+  rename.onclick=()=>{
+   const proposed=prompt("Enter a new name:",item.label||"Test key");
+   if(proposed===null)return;
+   const newName=proposed.trim();
+   if(!newName){
+    el("status").textContent="Name cannot be empty.";
+    return;
+   }
+   if(newName.length>60){
+    el("status").textContent="Name must be 60 characters or fewer.";
+    return;
+   }
+   try{
+    const keys=getKeys();
+    const target=keys.find(k=>k.id===item.id);
+    if(!target)return;
+    target.label=newName;
+    putKeys(keys);
+    render();
+    el("status").textContent="Key renamed.";
+   }catch(error){
+    el("status").textContent="Could not rename. Browser storage may be unavailable.";
+   }
+  };
+
   const remove=document.createElement("button");
   remove.className="danger";
   remove.textContent="Delete";
   remove.onclick=()=>{
-   if(confirm("Delete this test key?")){
+   if(!confirm("Delete this test key?"))return;
+   try{
     putKeys(getKeys().filter(k=>k.id!==item.id));
     render();
     el("status").textContent="Key deleted.";
+   }catch(error){
+    el("status").textContent="Could not delete the key.";
    }
   };
-  row.append(title,date,value,copy,remove);
+
+  row.append(title,date,value,copy,rename,remove);
   list.appendChild(row);
  });
 }
@@ -167,8 +255,8 @@ el("save").onclick=()=>{
  try{
   const keys=getKeys();
   keys.push({
-   id:Date.now().toString(36)+"-"+Math.random().toString(36).slice(2),
-   label:el("keyLabel").value.trim()||"Test key",
+   id:Date.now().toString(36)+"-"+crypto.randomUUID(),
+   label:el("keyLabel").value.trim().slice(0,60)||"Test key",
    key:currentKey,
    created:new Date().toISOString()
   });
@@ -180,27 +268,39 @@ el("save").onclick=()=>{
  }
 };
 
+el("searchKeys").addEventListener("input",render);
+
 el("clear").onclick=()=>{
  if(!getKeys().length){
   el("status").textContent="No saved keys to delete.";
   return;
  }
- if(confirm("Delete all saved test keys?")){
+ if(!confirm("Delete all saved test keys from this browser?"))return;
+ try{
   putKeys([]);
   render();
   el("status").textContent="All saved keys deleted.";
+ }catch(error){
+  el("status").textContent="Could not delete saved keys.";
  }
 };
 
 el("export").onclick=()=>{
- const blob=new Blob([JSON.stringify(getKeys(),null,2)],{type:"application/json"});
- const url=URL.createObjectURL(blob);
- const link=document.createElement("a");
- link.href=url;
- link.download="royalkey-test-keys.json";
- link.click();
- URL.revokeObjectURL(url);
- el("status").textContent="JSON file exported.";
+ try{
+  const data=JSON.stringify(getKeys(),null,2);
+  const blob=new Blob([data],{type:"application/json"});
+  const url=URL.createObjectURL(blob);
+  const link=document.createElement("a");
+  link.href=url;
+  link.download="royalkey-test-keys.json";
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),1000);
+  el("status").textContent="JSON file exported.";
+ }catch(error){
+  el("status").textContent="Export failed.";
+ }
 };
 
 render();
@@ -208,4 +308,3 @@ render();
 </script>
 </body>
 </html>
-
