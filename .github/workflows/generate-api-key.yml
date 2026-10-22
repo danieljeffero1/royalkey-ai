@@ -1,0 +1,25 @@
+
+name: Generate Test API Key
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Generate random test key
+        shell: bash
+        run: |
+          umask 077
+          printf 'rk_test_%s\n' "$(openssl rand -hex 24)" > royalkey.txt
+
+      - name: Save key as an artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: royalkey-test-key
+          path: royalkey.txt
+          retention-days: 1
