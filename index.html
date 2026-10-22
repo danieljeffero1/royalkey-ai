@@ -1,1 +1,211 @@
 
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RoyalKey AI - Test Key Manager</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#0b1224;color:#f4f7ff;font-family:Arial,sans-serif;padding:20px}
+main{max-width:850px;margin:auto}
+header{padding:20px 0}
+h1{font-size:34px;margin-bottom:5px}
+p{color:#c2cee5;line-height:1.5}
+.panel{background:#15223d;border:1px solid #35496c;border-radius:14px;padding:20px;margin:18px 0}
+label{display:block;margin:14px 0 7px}
+input,select{width:100%;padding:12px;border-radius:8px;border:1px solid #53698c;background:#0b1224;color:white;font-size:16px}
+button{padding:11px 14px;margin:8px 6px 0 0;border:0;border-radius:8px;background:#86b9ff;color:#101b35;font-weight:bold;cursor:pointer}
+button.secondary{background:#2b3d5d;color:white}
+button.danger{background:#713541;color:white}
+button:disabled{opacity:.4;cursor:not-allowed}
+.key{margin-top:14px;padding:14px;border:1px dashed #718bb4;border-radius:8px;overflow-wrap:anywhere;font-family:monospace}
+.saved{border-top:1px solid #35496c;padding:14px 0;overflow-wrap:anywhere}
+.small{font-size:13px}
+.notice{border-left:4px solid #ffbd70;padding:12px;background:#30271e;color:#ffe0b5}
+</style>
+</head>
+<body>
+<main>
+<header>
+<h1>RoyalKey AI</h1>
+<p>Your test-key generator and browser key manager.</p>
+</header>
+
+<div class="notice">
+<strong>Important:</strong> These are demo test strings only. They are not real API keys and cannot connect to AI services. Never put real secret API keys in a public website.
+</div>
+
+<section class="panel">
+<h2>Generate a test key</h2>
+<label for="keyLabel">Key name (optional)</label>
+<input id="keyLabel" maxlength="60" placeholder="Example: My website test">
+
+<label for="keyLength">Key size</label>
+<select id="keyLength">
+<option value="24">24 random bytes</option>
+<option value="32" selected>32 random bytes</option>
+<option value="48">48 random bytes</option>
+</select>
+
+<button id="generate">Generate test key</button>
+<button id="copy" class="secondary" disabled>Copy key</button>
+<button id="save" class="secondary" disabled>Save key</button>
+
+<div id="currentKey" class="key">Your generated key will appear here.</div>
+<p id="status" role="status"></p>
+</section>
+
+<section class="panel">
+<h2>My saved test keys</h2>
+<p class="small">Saved only in this browser on this device.</p>
+<button id="export" class="secondary">Export JSON</button>
+<button id="clear" class="danger">Delete all saved keys</button>
+<div id="savedKeys"></div>
+</section>
+
+<p class="small">RoyalKey AI — No account or paid service required.</p>
+</main>
+
+<script>
+(function(){
+"use strict";
+const STORAGE="royalkey_test_keys_v1";
+let currentKey="";
+const el=id=>document.getElementById(id);
+
+function getKeys(){
+ try{
+  const value=JSON.parse(localStorage.getItem(STORAGE)||"[]");
+  return Array.isArray(value)?value:[];
+ }catch(error){return [];}
+}
+
+function putKeys(keys){
+ localStorage.setItem(STORAGE,JSON.stringify(keys));
+}
+
+function generateKey(bytes){
+ if(!window.crypto||!window.crypto.getRandomValues){
+  throw new Error("Secure random generation is unavailable in this browser.");
+ }
+ const data=new Uint8Array(bytes);
+ window.crypto.getRandomValues(data);
+ return "rk_test_"+Array.from(data,b=>b.toString(16).padStart(2,"0")).join("");
+}
+
+async function copyText(value){
+ try{
+  await navigator.clipboard.writeText(value);
+  el("status").textContent="Copied to clipboard.";
+ }catch(error){
+  const area=document.createElement("textarea");
+  area.value=value;
+  document.body.appendChild(area);
+  area.select();
+  const copied=document.execCommand("copy");
+  area.remove();
+  el("status").textContent=copied?"Copied to clipboard.":"Copy blocked. Select the key and copy it manually.";
+ }
+}
+
+function render(){
+ const list=el("savedKeys");
+ list.replaceChildren();
+ const keys=getKeys();
+ if(!keys.length){
+  list.textContent="No saved test keys yet.";
+  return;
+ }
+ keys.slice().reverse().forEach(item=>{
+  const row=document.createElement("div");
+  row.className="saved";
+  const title=document.createElement("strong");
+  title.textContent=item.label||"Test key";
+  const date=document.createElement("p");
+  date.className="small";
+  date.textContent=new Date(item.created).toLocaleString();
+  const value=document.createElement("div");
+  value.className="key";
+  value.textContent=item.key;
+  const copy=document.createElement("button");
+  copy.textContent="Copy";
+  copy.onclick=()=>copyText(item.key);
+  const remove=document.createElement("button");
+  remove.className="danger";
+  remove.textContent="Delete";
+  remove.onclick=()=>{
+   if(confirm("Delete this test key?")){
+    putKeys(getKeys().filter(k=>k.id!==item.id));
+    render();
+    el("status").textContent="Key deleted.";
+   }
+  };
+  row.append(title,date,value,copy,remove);
+  list.appendChild(row);
+ });
+}
+
+el("generate").onclick=()=>{
+ try{
+  currentKey=generateKey(Number(el("keyLength").value));
+  el("currentKey").textContent=currentKey;
+  el("copy").disabled=false;
+  el("save").disabled=false;
+  el("status").textContent="New test key generated.";
+ }catch(error){
+  el("status").textContent=error.message;
+ }
+};
+
+el("copy").onclick=()=>{
+ if(currentKey)copyText(currentKey);
+};
+
+el("save").onclick=()=>{
+ if(!currentKey)return;
+ try{
+  const keys=getKeys();
+  keys.push({
+   id:Date.now().toString(36)+"-"+Math.random().toString(36).slice(2),
+   label:el("keyLabel").value.trim()||"Test key",
+   key:currentKey,
+   created:new Date().toISOString()
+  });
+  putKeys(keys);
+  render();
+  el("status").textContent="Key saved in this browser.";
+ }catch(error){
+  el("status").textContent="Could not save. Browser storage may be disabled.";
+ }
+};
+
+el("clear").onclick=()=>{
+ if(!getKeys().length){
+  el("status").textContent="No saved keys to delete.";
+  return;
+ }
+ if(confirm("Delete all saved test keys?")){
+  putKeys([]);
+  render();
+  el("status").textContent="All saved keys deleted.";
+ }
+};
+
+el("export").onclick=()=>{
+ const blob=new Blob([JSON.stringify(getKeys(),null,2)],{type:"application/json"});
+ const url=URL.createObjectURL(blob);
+ const link=document.createElement("a");
+ link.href=url;
+ link.download="royalkey-test-keys.json";
+ link.click();
+ URL.revokeObjectURL(url);
+ el("status").textContent="JSON file exported.";
+};
+
+render();
+})();
+</script>
+</body>
+</html>
+
